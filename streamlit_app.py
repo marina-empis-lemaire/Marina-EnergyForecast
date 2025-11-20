@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import xgboost as xgb
-import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, r2_score
 
@@ -174,48 +173,41 @@ if uploaded_file is not None:
             st.metric("R² Score", f"{r2_test_hyb:.4f}", delta=f"{r2_test_hyb - r2_test_theo:.4f}")
 
         # ====================================================
-        # 6) Visualizations
+        # 6) Visualizations (Native Streamlit)
         # ====================================================
         st.divider()
         st.header("📈 Visualizations")
         
-        time_test = data['timestamp'].iloc[split_idx:]
+        # Calculate full hybrid series for plotting
+        # (We predict on the whole dataset for visualization)
+        data['Hybrid'] = data['E_theo'] + xgb_model.predict(X_boost)
+        
+        # Prepare DataFrame for plotting (native charts use index for x-axis usually)
+        # We select the columns we want to compare
+        plot_df = data[['timestamp', 'energie', 'E_theo', 'Hybrid']].copy()
+        plot_df = plot_df.rename(columns={
+            'energie': 'Empirical (Measured)',
+            'E_theo': 'Theoretical (Linear)',
+            'Hybrid': 'Hybrid (Theo + XGB)'
+        })
+        plot_df = plot_df.set_index('timestamp')
 
         tab1, tab2 = st.tabs(["Full Period View", "Zoomed View"])
 
         with tab1:
-            fig, ax = plt.subplots(figsize=(12, 5))
-            ax.plot(data['timestamp'], data['energie'], label='Empirical (Measured)', linewidth=1.5, color='black', alpha=0.7)
-            ax.plot(data['timestamp'], data['E_theo'], label='Theoretical (Linear)', linestyle='--', color='red', alpha=0.6)
-            # Calculate full hybrid for plotting
-            full_hybrid = data['E_theo'] + xgb_model.predict(X_boost)
-            ax.plot(data['timestamp'], full_hybrid, label='Hybrid (Theo + XGB)', color='blue', alpha=0.7)
-            
-            ax.set_xlabel('Time')
-            ax.set_ylabel('Energy')
-            ax.legend()
-            ax.set_title('Empirical vs Theoretical vs Hybrid (Full period)')
-            st.pyplot(fig)
+            st.subheader("Empirical vs Theoretical vs Hybrid (Full period)")
+            st.line_chart(plot_df)
 
         with tab2:
+            st.subheader("Zoomed View")
             st.markdown("Adjust the step size to zoom in on the data (plotting every Nth point).")
             n_points_pas = st.slider("Step Size (Plot every Nth point)", 1, 1000, 500)
             
-            time_zoom = data['timestamp'].iloc[0::n_points_pas]
-            E_emp_zoom = data['energie'].iloc[0::n_points_pas]
-            E_theo_zoom = data['E_theo'].iloc[0::n_points_pas]
-            E_hyb_zoom = (data['E_theo'] + xgb_model.predict(X_boost)).iloc[0::n_points_pas]
-
-            fig2, ax2 = plt.subplots(figsize=(12, 5))
-            ax2.plot(time_zoom, E_emp_zoom, label='Empirical', linewidth=2, color='black')
-            ax2.plot(time_zoom, E_theo_zoom, label='Theoretical', linestyle='--', color='red')
-            ax2.plot(time_zoom, E_hyb_zoom, label='Hybrid', color='blue')
+            # Slice the DataFrame based on the slider
+            # We use slice notation [start::step]
+            zoomed_df = plot_df.iloc[0::n_points_pas]
             
-            ax2.set_xlabel('Time')
-            ax2.set_ylabel('Energy')
-            ax2.legend()
-            ax2.set_title(f'Zoomed View (Step: {n_points_pas})')
-            st.pyplot(fig2)
+            st.line_chart(zoomed_df)
 
     except Exception as e:
         st.error(f"An error occurred during processing: {e}")
